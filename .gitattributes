@@ -1,0 +1,20 @@
+# The four files below are verified by SHA-256 against their published
+# revisions, so Git must never rewrite their bytes. With `core.autocrlf=true`
+# on Windows, a checkout converts LF to CRLF and every digest stops matching —
+# the file is then not the revision it claims. `-text` disables all conversion
+# for them, on every platform.
+src/shaders/landing-pages/LandingPageFrame.tsx -text
+src/shaders/threeui.css -text
+public/landing-pages/bestsellers-book-showcase.html -text
+public/landing-pages/complete-shelf-v2.html -text
+
+# Source text stays LF in the repository; Windows checkouts may use CRLF.
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.mjs text eol=lf
+*.css text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.sql text eol=lf
+*.html text eol=lf

@@ -1,0 +1,797 @@
+/*
+ * The shelf's own palette, read off the packaged document so the surrounding
+ * interface belongs to the same object: walnut room, paper volumes, copper
+ * accent. Everything the reader touches outside the 3D scene is styled from
+ * these tokens.
+ */
+:root {
+  --room: #14100d;
+  --room-deep: #0d0a08;
+  --paper: #f1eadf;
+  --paper-deep: #e2d8c8;
+  --ink: #2b231c;
+  --ink-soft: #6d6155;
+  --walnut: #3a2118;
+  --rule: rgba(241, 234, 223, 0.16);
+  --accent: #c87046;
+  --accent-deep: #a9532c;
+  --danger: #c4553f;
+  --serif: "Iowan Old Style", Baskerville, "Times New Roman", serif;
+  --sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--room-deep);
+  color: var(--paper);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  /* The shelf fills the viewport and the sidebar scrolls on its own, so the
+     page itself never scrolls. */
+  overflow: hidden;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* A visible ring on every interactive element, never removed without a
+   replacement — the shelf canvas cannot take focus, so the surrounding
+   interface has to carry keyboard navigation on its own. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+/* Minimum 44px touch targets everywhere. */
+button,
+input,
+select,
+textarea,
+.auth__import span {
+  min-height: 44px;
+}
+
+/* ------------------------------------------------------------------ shell */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.app__bar {
+  flex: 0 0 auto;
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+  padding: 14px clamp(16px, 3vw, 40px);
+  background: rgba(13, 10, 8, 0.82);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--rule);
+}
+
+.app__brand {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+}
+
+.app__title {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: clamp(20px, 2.4vw, 27px);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+}
+
+.app__tagline {
+  margin: 0;
+  color: rgba(241, 234, 223, 0.62);
+  font-size: 12px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.app__nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.app__action {
+  padding: 0 18px;
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  color: var(--paper);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  transition: background 150ms var(--ease), border-color 150ms var(--ease);
+}
+
+.app__action:hover:not(:disabled) {
+  background: rgba(200, 112, 70, 0.18);
+  border-color: var(--accent);
+}
+
+.app__action:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.app__error {
+  margin: 0;
+  padding: 12px clamp(16px, 3vw, 40px);
+  background: rgba(196, 85, 63, 0.16);
+  border-bottom: 1px solid rgba(196, 85, 63, 0.42);
+  color: #ffd9cf;
+  font-size: 14px;
+}
+
+.app__main {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* ------------------------------------------------------------------ shelf */
+
+.shelf-view {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  height: 100%;
+  min-height: 0;
+}
+
+.shelf-view__scene {
+  position: relative;
+  min-width: 0;
+  background: var(--room-deep);
+}
+
+.shelf-view__scene > .threeui-background {
+  height: 100%;
+}
+
+.shelf-view__placeholder {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  height: 100%;
+  max-width: 46ch;
+  margin: 0 auto;
+  padding: 24px;
+  color: rgba(241, 234, 223, 0.66);
+  font-size: 14px;
+  text-align: center;
+}
+
+.shelf-view__placeholder-title {
+  margin: 0;
+  color: var(--paper);
+  font-family: var(--serif);
+  font-size: clamp(22px, 3vw, 30px);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+}
+
+.shelf-view__placeholder p {
+  margin: 0;
+}
+
+/* ------------------------------------------------------------- entry list */
+
+.entry-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 18px 16px 24px;
+  background: var(--room);
+  border-left: 1px solid var(--rule);
+  overflow-y: auto;
+}
+
+.entry-list__storage {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--rule);
+}
+
+.entry-list__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.entry-list__title {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 19px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.entry-list__compose {
+  padding: 0 16px;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: #1a0f08;
+  font-size: 13px;
+  font-weight: 600;
+  transition: background 150ms var(--ease);
+}
+
+.entry-list__compose:hover {
+  background: #d8834f;
+}
+
+.entry-list__search {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.entry-list__search-label {
+  color: rgba(241, 234, 223, 0.62);
+  font-size: 11px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.entry-list__search input {
+  width: 100%;
+  padding: 0 14px;
+  background: rgba(241, 234, 223, 0.06);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+}
+
+.entry-list__search input::placeholder {
+  color: rgba(241, 234, 223, 0.38);
+}
+
+.entry-list__status {
+  margin: 8px 0 0;
+  color: rgba(241, 234, 223, 0.66);
+  font-size: 14px;
+}
+
+.entry-list__items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.entry-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 12px 14px;
+  background: rgba(241, 234, 223, 0.05);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  text-align: left;
+  transition: background 150ms var(--ease), border-color 150ms var(--ease), transform 150ms var(--ease);
+}
+
+.entry-card:hover {
+  background: rgba(241, 234, 223, 0.1);
+  border-color: rgba(200, 112, 70, 0.5);
+}
+
+.entry-card:active {
+  transform: scale(0.985);
+}
+
+.entry-card[aria-current="true"] {
+  background: rgba(200, 112, 70, 0.16);
+  border-color: var(--accent);
+}
+
+.entry-card__roman {
+  color: var(--accent);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.entry-card__title {
+  font-family: var(--serif);
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+}
+
+.entry-card__meta {
+  color: rgba(241, 234, 223, 0.6);
+  font-size: 12px;
+}
+
+.entry-card__subtitle {
+  color: rgba(241, 234, 223, 0.76);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* ----------------------------------------------------------------- editor */
+
+.editor-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(8, 6, 5, 0.72);
+  backdrop-filter: blur(6px);
+}
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  width: min(760px, 100%);
+  max-height: min(90dvh, 900px);
+  background: var(--paper);
+  border-radius: 16px;
+  color: var(--ink);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+.editor__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 22px;
+  border-bottom: 1px solid rgba(43, 35, 28, 0.14);
+}
+
+.editor__title {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.025em;
+}
+
+.editor__close {
+  padding: 0 16px;
+  background: transparent;
+  border: 1px solid rgba(43, 35, 28, 0.22);
+  border-radius: 999px;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.editor__close:hover {
+  background: rgba(43, 35, 28, 0.07);
+}
+
+.editor__body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px;
+  padding: 20px 22px;
+  overflow-y: auto;
+}
+
+.editor__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.editor__field--wide {
+  grid-column: 1 / -1;
+}
+
+.editor__field > span {
+  color: var(--ink-soft);
+  font-size: 11px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.editor__field input,
+.editor__field select,
+.editor__field textarea {
+  width: 100%;
+  padding: 10px 13px;
+  background: #fff;
+  border: 1px solid rgba(43, 35, 28, 0.2);
+  border-radius: 10px;
+  color: var(--ink);
+}
+
+.editor__field textarea {
+  min-height: 220px;
+  font-family: var(--serif);
+  font-size: 17px;
+  line-height: 1.62;
+  resize: vertical;
+}
+
+.editor__field input::placeholder,
+.editor__field textarea::placeholder {
+  color: rgba(43, 35, 28, 0.4);
+}
+
+.editor__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 22px;
+  background: var(--paper-deep);
+  border-top: 1px solid rgba(43, 35, 28, 0.14);
+}
+
+.editor__messages {
+  min-height: 20px;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.editor__error {
+  color: #9c2f1c;
+  font-weight: 600;
+}
+
+.editor__actions {
+  display: flex;
+  gap: 10px;
+}
+
+.editor__delete {
+  padding: 0 18px;
+  background: transparent;
+  border: 1px solid rgba(156, 47, 28, 0.42);
+  border-radius: 999px;
+  color: #9c2f1c;
+  font-size: 13px;
+}
+
+.editor__delete:hover:not(:disabled) {
+  background: rgba(156, 47, 28, 0.1);
+}
+
+.editor__save {
+  padding: 0 26px;
+  background: var(--ink);
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  color: var(--paper);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.editor__save:hover:not(:disabled) {
+  background: #171310;
+}
+
+.editor__save:disabled,
+.editor__delete:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ----------------------------------------------------------------- reader */
+
+/*
+ * The Field Manuals page is authored for a full viewport: its hero word is sized
+ * in vw and its cards are placed in vh. A small modal would crop the composition
+ * and shrink the type, so the reader takes the whole screen and keeps only a
+ * slim bar for the way out.
+ */
+.reader-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: var(--room-deep);
+}
+
+.reader {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100dvh;
+}
+
+.reader__bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 18px;
+  background: var(--room);
+  border-bottom: 1px solid var(--rule);
+}
+
+.reader__label {
+  margin: 0;
+  color: rgba(241, 234, 223, 0.68);
+  font-size: 12px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.reader__close {
+  padding: 0 18px;
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  color: var(--paper);
+  font-size: 13px;
+}
+
+.reader__close:hover {
+  background: rgba(241, 234, 223, 0.1);
+}
+
+.reader__frame {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.reader__frame > .threeui-background {
+  height: 100%;
+}
+
+.reader__status {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  margin: 0;
+  color: rgba(241, 234, 223, 0.66);
+  font-size: 14px;
+}
+
+/* ------------------------------------------------------------------- auth */
+
+.auth {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+}
+
+.auth--local {
+  max-width: 460px;
+}
+
+.auth__note {
+  flex: 1 1 100%;
+  margin: 0;
+  color: rgba(241, 234, 223, 0.62);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.auth__note code {
+  padding: 1px 5px;
+  background: rgba(241, 234, 223, 0.1);
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.auth__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.auth__field > span {
+  color: rgba(241, 234, 223, 0.62);
+  font-size: 11px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.auth__field input {
+  width: 230px;
+  padding: 0 13px;
+  background: rgba(241, 234, 223, 0.06);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+}
+
+.auth__field input::placeholder {
+  color: rgba(241, 234, 223, 0.38);
+}
+
+.auth__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.auth button {
+  padding: 0 18px;
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  color: var(--paper);
+  font-size: 13px;
+}
+
+.auth button:hover:not(:disabled) {
+  background: rgba(200, 112, 70, 0.18);
+  border-color: var(--accent);
+}
+
+.auth button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.auth__import {
+  display: inline-flex;
+  align-items: center;
+}
+
+.auth__import span {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 18px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.auth__import:hover span {
+  background: rgba(200, 112, 70, 0.18);
+  border-color: var(--accent);
+}
+
+.auth__import input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.auth__import input:focus-visible + span,
+.auth__import:focus-within span {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.auth__status {
+  flex: 1 1 100%;
+  margin: 0;
+  color: #cbe0c4;
+  font-size: 13px;
+}
+
+.auth__error {
+  flex: 1 1 100%;
+  margin: 0;
+  color: #ffbfae;
+  font-size: 13px;
+}
+
+/* ------------------------------------------------------------ responsive */
+
+@media (max-width: 1080px) {
+  .app {
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+
+  body {
+    overflow: auto;
+  }
+
+  /*
+   * The shelf keeps the authored full-height composition, so it gets a fixed
+   * pane rather than a proportional row: its own UI is anchored to the bottom of
+   * that pane, and a short row would push the title over the books.
+   */
+  .shelf-view {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(420px, 62dvh) auto;
+    height: auto;
+  }
+
+  .shelf-view__scene {
+    min-height: 420px;
+  }
+
+  .entry-list {
+    border-left: 0;
+    border-top: 1px solid var(--rule);
+    overflow-y: visible;
+  }
+}
+
+@media (max-width: 720px) {
+  .app__bar {
+    padding: 12px 16px;
+  }
+
+  .editor__body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .auth__field input {
+    width: 100%;
+  }
+
+  .editor__foot {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .editor__actions {
+    justify-content: flex-end;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

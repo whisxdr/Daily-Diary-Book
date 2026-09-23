@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env.local
+.env
+
+# Generated at build time from the two byte-exact ThreeUI documents below.
+public/landing-pages/*.template.html
+
+# Local tooling state, not part of the app.
+.mimosa/
+.zcode/

@@ -6,6 +6,10 @@ dist/
 # Generated at build time from the two byte-exact ThreeUI documents below.
 public/landing-pages/*.template.html
 
-# Local tooling state, not part of the app.
+# Local tooling state, not part of the app. .claude/ also holds the worktrees
+# directory, which Git would otherwise stage as a stray submodule pointer.
 .mimosa/
 .zcode/
+.serena/
+.probe/
+.claude/

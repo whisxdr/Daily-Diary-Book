@@ -42,15 +42,25 @@ Saat env terisi, login magic link aktif dan catatan disimpan ke cloud. Ekspor/im
 
 ```
 scripts/
-  build-templates.mjs   ekstrak BOOKS + kartu, emit template, assert diff terbatas
+  build-templates.mjs   ekstrak BOOKS + kartu, ganti copy, emit template, assert diff terbatas
+  lib/scan.mjs          bracket matcher untuk literal array/object
+  lib/rewrite.mjs       terapkan edit + buktikan tidak ada region lain yang berubah
+  lib/copy.mjs          tabel pengganti copy bawaan halaman paket
   check-derive.mjs      regresi bentuk entri
   verify-threeui.mjs    cek digest sumber terdaftar
+  probe-fill.mjs        diagnostik: isi template, tulis ke .probe/ (tidak ikut terkirim)
 public/landing-pages/
   complete-shelf-v2.html          900 KB, byte-exact
   bestsellers-book-showcase.html  3.5 MB, byte-exact
   *.template.html                 generated, gitignored
 src/
-  lib/derive.ts         entri → field BOOKS + kartu manual
+  lib/derive.ts         pintu masuk: re-export modul derive/*
+  lib/derive/
+    text.ts             roman, ringkasan, tanggal, escaper
+    catalog.ts          palette + geometri + pemilihan motif/seed
+    shelfBook.ts        entri → record BOOKS
+    manualCard.ts       entri → kartu + record manual
+    fallback.ts         grid statis tanpa WebGL
   lib/usePageBlob.ts    fetch template, isi token, blob URL
   components/           ShelfView, EntryEditor, EntryList, ManualReader, AuthGate
 supabase/schema.sql     tabel entries + RLS + 4 policy
@@ -69,9 +79,14 @@ Jadi data disuntikkan dengan mengganti literal tersebut menjadi token, sekali di
 
 Bagian yang rapuh (mencari akhir literal) berjalan sekali saat build di bawah assertion, bukan tiap page load. File di `public/landing-pages/` tetap byte-exact dan digest-nya diverifikasi `verify:threeui`.
 
+**Copy bawaan halaman paket juga diganti di sini.** Token hanya menyentuh data, jadi tanpa langkah tambahan rak akan berjudul "Working Volumes" dan pembaca akan menampilkan label "Getting started", lengkap dengan kolofon yang mengklaim artwork-nya milik studi katalog asli. Tabel di `scripts/lib/copy.mjs` mengganti copy itu — termasuk teks yang dilukis ke canvas buku, yang tidak terlihat dari markup — dengan bahasa antarmuka aplikasi. Tiap anchor harus unik dan perubahan di luar daftar itu menggagalkan build.
+
 ## Catatan teknis
 
 **`chapters` selalu tiga item.** Halaman rak mengakses `chapters[0..2]` tanpa cek panjang — di punggung buku, pelat, dan label halaman. Array pendek melempar `TypeError` di dalam skrip scene, yang ditangkap `initialize().catch()` dan berubah jadi katalog statis. Karena itu `derive.ts` mengisi slot yang kosong dengan label cadangan, bukan memotong array. `check:derive` menguji kasus ini.
+
+**`.gitattributes` memakai urutan yang disengaja.** Aturan `-text` untuk file yang diverifikasi digest diletakkan paling bawah, karena gitattributes memakai pola pertama yang cocok. Kalau aturan `*.tsx`/`*.css`/`*.html` ditaruh di atasnya, pin itu tidak berefek dan checkout Windows mengubah LF jadi CRLF — digest langsung mismatch. `verify:threeui` sekarang menyebutkan penyebab ini saat gagal.
+
 
 **`fill` adalah dependency `usePageBlob`.** Dokumen rak dibangun ulang setiap daftar entri berubah; kalau tidak, rak tetap menampilkan katalog saat pertama dibangun. Template-nya sendiri di-cache per URL, jadi rebuild tidak mengunduh ulang 870 KB.
 

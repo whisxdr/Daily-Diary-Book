@@ -57,12 +57,16 @@ const EXTRACTS = [
 
 /** Returns the source of `export function <label>` up to its closing brace. */
 function extractFunction(source, label) {
+  // Normalised to LF: the expected digest is over the published revision's
+  // bytes, and this check is about the component body, not the checkout's line
+  // endings.
+  const text = source.replace(/\r\n/g, "\n");
   const marker = `export function ${label}(`;
-  const start = source.indexOf(marker);
+  const start = text.indexOf(marker);
   if (start < 0) return null;
-  const end = source.indexOf("\n}\n", start);
+  const end = text.indexOf("\n}\n", start);
   if (end < 0) return null;
-  return source.slice(start, end + 3);
+  return text.slice(start, end + 3);
 }
 
 /** Files reconstructed from the npm package; checked against the same bundle. */
@@ -81,6 +85,17 @@ const RECONSTRUCTED = [
 
 const sha256 = (file) => createHash("sha256").update(readFileSync(file)).digest("hex");
 
+/*
+ * A CRLF checkout hashes differently from the published revision while the
+ * content is identical, which reads as "this file was edited". Naming the real
+ * cause saves the reader from hunting a diff that does not exist.
+ */
+function lineEndingNote(file) {
+  return readFileSync(file, "utf8").includes("\r\n")
+    ? "\n             this checkout has CRLF line endings; the digest is over LF bytes. Re-run `git checkout` after the -text pins in .gitattributes take effect."
+    : "";
+}
+
 let failed = 0;
 
 console.log("Registered source — SHA-256\n");
@@ -97,7 +112,7 @@ for (const entry of EXPECTED) {
   console.log(`  ${ok ? "OK      " : "MISMATCH"} ${entry.path}`);
   if (!ok) {
     console.log(`             expected ${entry.sha256}`);
-    console.log(`             actual   ${actual}`);
+    console.log(`             actual   ${actual}${lineEndingNote(file)}`);
   }
   if (entry.note) console.log(`             note: ${entry.note}`);
 }

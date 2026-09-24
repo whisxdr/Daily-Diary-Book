@@ -5,10 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run build:templates && npm run check:derive && tsc --noEmit && vite build",
+    "build": "npm run build:templates && npm run check:templates && npm run check:derive && tsc --noEmit && vite build",
     "build:templates": "node scripts/build-templates.mjs",
+    "check:templates": "node scripts/check-templates.mjs",
     "check:derive": "node scripts/check-derive.mjs",
     "verify:threeui": "node scripts/verify-threeui.mjs",
+    "probe:fill": "node scripts/probe-fill.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

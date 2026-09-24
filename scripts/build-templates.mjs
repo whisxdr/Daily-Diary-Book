@@ -205,17 +205,23 @@ function buildShelf() {
   //    and is no longer needed, because the index no longer depends on how many
   //    entries there are.
   //
-  //    `Number`/`Math.trunc`/`?? 0` stay as guards rather than as the mechanism.
+  //    `Number`/`Math.trunc`/`|| 0` stay as guards rather than as the mechanism.
   //    `derive.ts` already clamps to a valid crop, but this expression runs
   //    inside the page's own script, where an index that is not a whole number —
   //    `NaN` from a hand-edited payload, a string, a float — indexes to
   //    `undefined`, and the destructuring on the left then throws. A throw there
   //    costs the reader the entire scene: `initialize().catch()` swaps in the
   //    static catalog and nothing logs why. Coercing first keeps a bad index to
-  //    one wrong cover instead of no shelf at all. `|| 0` catches only `NaN`,
-  //    because `0` is itself a valid crop.
+  //    one wrong cover instead of no shelf at all.
+  //
+  //    The trailing `|| 0` is not redundant with the one inside. `Infinity` is
+  //    truthy, so the inner guard passes it through, and `Infinity % 7` is `NaN`
+  //    — the exact value the guard exists to prevent. JSON has no Infinity
+  //    literal, but `1e999` parses to it, so a hand-edited file can carry one.
+  //    `NaN || 0` is the case the outer guard catches, and after the inner guard
+  //    it is the only one left.
   const cropUse = "COVER_CROPS[BOOKS.indexOf(book)]";
-  const cropFix = "COVER_CROPS[mod(Math.trunc(Number(book.coverCrop)) || 0, COVER_CROPS.length)]";
+  const cropFix = "COVER_CROPS[mod(Math.trunc(Number(book.coverCrop)) || 0, COVER_CROPS.length) || 0]";
   const cropped = replaceOnce(out, cropUse, cropFix, "COVER_CROPS lookup");
   record(edits, cropFix, cropUse, "COVER_CROPS lookup");
   out = cropped.text;

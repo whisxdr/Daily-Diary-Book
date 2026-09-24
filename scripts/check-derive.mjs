@@ -320,6 +320,62 @@ console.log("\nderive.ts — reader-owned categories\n");
 }
 
 /*
+ * Deleting a category has to rewrite the entries that named it.
+ *
+ * `findCategory` keeps *rendering* an entry whose id no longer resolves, under
+ * the first category — which is what made the original behaviour look correct
+ * while being wrong. The stored id is what the manager counts against, so a
+ * deleted id left in `entries.mood` credits a category that does not exist, and
+ * the entry silently re-attaches if that id ever returns through an import. The
+ * move itself happens in `App.saveCategories` (a hook, so not callable here);
+ * what this asserts is the invariant it has to leave behind, and the reason it
+ * is needed — that rendering alone does not distinguish the two states.
+ */
+{
+  /*
+   * The surviving list after "wonder" was deleted, and an entry that still names
+   * it — the state `App.saveCategories` has to clean up.
+   */
+  const list = normalizeCategories([{ id: "life", label: "Life", motifKey: "orbits" }]);
+  const orphan = entry({ id: "o1", mood: "wonder" });
+
+  /*
+   * Rendering cannot tell a stale id from a live one: `findCategory` resolves
+   * the missing "wonder" to the first category, so the volume draws exactly as
+   * if the entry had said "life" — same look, same label, same record. That is
+   * what made the old behaviour look correct while leaving the wrong id stored.
+   */
+  const stale = lib.toShelfBook(orphan, 0, list);
+  const resolved = lib.toShelfBook({ ...orphan, mood: "life" }, 0, list);
+  if (JSON.stringify(stale) !== JSON.stringify(resolved)) {
+    fail("a deleted category", "rendering distinguishes a stale id from a resolved one, which it should not");
+  }
+  if (stale.motifKey !== "orbits") {
+    fail("a deleted category", `the fallback look is ${JSON.stringify(stale.motifKey)}, expected the first category's`);
+  }
+
+  // The counts can: they key on the stored id, which is why the move matters.
+  const beforeRemap = lib.categoryCounts([orphan]);
+  if (beforeRemap.wonder !== 1) {
+    fail("a deleted category", `the stale id does not count: ${JSON.stringify(beforeRemap)}`);
+  }
+  const afterRemap = lib.categoryCounts([{ ...orphan, mood: "life" }]);
+  if (afterRemap.life !== 1 || afterRemap.wonder !== undefined) {
+    fail("a deleted category", `the remapped id does not count under its new home: ${JSON.stringify(afterRemap)}`);
+  }
+
+  /*
+   * And the id has to be gone from the list for the remap to have been
+   * warranted, so a category the reader merely renamed is never treated as
+   * deleted — a rename keeps the id, which is the whole point of storing ids.
+   */
+  const renamed = normalizeCategories([{ id: "life", label: "Kehidupan", motifKey: "orbits" }]);
+  if (lib.findCategory(renamed, "life").label !== "Kehidupan") {
+    fail("a renamed category", "stopped resolving its entries");
+  }
+}
+
+/*
  * The manual page maps over its own steps, so a short array is safe there — but
  * a `steps` entry without a string title would still render as "undefined".
  */

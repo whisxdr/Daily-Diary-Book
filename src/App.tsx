@@ -68,16 +68,47 @@ export function App() {
    * already constrains `motifKey` at the type level, but this is the boundary a
    * future caller could cross with raw input, and normalizing here means the
    * guarantee does not depend on every path having remembered to do it.
+   *
+   * `remap` carries the ids the manager deleted that entries still named. Those
+   * entries have to be rewritten, not merely re-rendered: `findCategory` would
+   * keep showing them under the first category, but their stored id would still
+   * name a category that no longer exists — so the counts in the manager would
+   * credit a ghost, and the entries would silently re-attach if that id ever
+   * came back through an import.
+   *
+   * The list is saved before the entries are rewritten, so a failure leaves the
+   * old behaviour (entries naming a missing id, which still render) rather than
+   * entries naming a category that was never stored.
    */
   const saveCategories = useCallback(
-    async (next: Category[]) => {
+    async (next: Category[], remap?: { from: string[]; to: string }) => {
       const clean = normalizeCategories(next);
       await store.saveCategories(clean);
       // The shelf renders from `categories`, so the list has to come back from
       // the store before the change is visible.
       setCategories(clean);
+
+      if (!remap) return;
+      const stale = new Set(remap.from);
+      for (const entry of entries) {
+        if (!stale.has(entry.mood)) continue;
+        await store.save(
+          {
+            date: entry.date,
+            title: entry.title,
+            subtitle: entry.subtitle,
+            body: entry.body,
+            mood: remap.to,
+            tags: entry.tags,
+          },
+          entry.id,
+        );
+      }
+      // Through `refresh` so the rewritten entries come back from the store
+      // rather than being patched in local state.
+      await refresh();
     },
-    [store],
+    [entries, refresh, store],
   );
 
   /*
@@ -85,28 +116,48 @@ export function App() {
    * a backup restores the names the entries point at. The entries themselves are
    * written one at a time through the active store, which is what assigns ids
    * when saving to the cloud.
+   *
+   * The entries go first and the categories last, which is the opposite of the
+   * obvious order. Replacing the list is the one destructive write here — it
+   * discards names the reader may have written — so it happens only once every
+   * entry has already landed. With the list written first, a failure partway
+   * through the entries (quota, a dropped connection, an RLS refusal) would leave
+   * the reader's own category names already gone *and* only some entries
+   * imported. Written last, the same failure costs nothing that was not already
+   * saved: the entries that landed render under the existing list via
+   * `findCategory`, and the names survive to be retried.
+   *
+   * The refresh runs even when a write throws, which is why it is in a `finally`.
+   * A large import can fail partway and the writes before that point are already
+   * committed; without the refresh the shelf would still show the pre-import
+   * list, so the reader's reasonable next move is to import the same file again,
+   * duplicating everything that did land (and, in the cloud, under fresh ids).
+   * Showing what actually happened makes the retry a decision rather than a trap.
    */
   const importAll = useCallback(
     async ({ entries: imported, categories: importedCategories }: ImportResult) => {
-      if (importedCategories) {
-        // Through `saveCategories`, so an imported list is normalized and stored
-        // by the same path the dialog uses.
-        await saveCategories(importedCategories);
+      try {
+        for (const entry of imported) {
+          await store.save(
+            {
+              date: entry.date,
+              title: entry.title,
+              subtitle: entry.subtitle,
+              body: entry.body,
+              mood: entry.mood,
+              tags: entry.tags,
+            },
+            cloudEnabled && email ? undefined : entry.id,
+          );
+        }
+        if (importedCategories) {
+          // Through `saveCategories`, so an imported list is normalized and
+          // stored by the same path the dialog uses.
+          await saveCategories(importedCategories);
+        }
+      } finally {
+        await refresh();
       }
-      for (const entry of imported) {
-        await store.save(
-          {
-            date: entry.date,
-            title: entry.title,
-            subtitle: entry.subtitle,
-            body: entry.body,
-            mood: entry.mood,
-            tags: entry.tags,
-          },
-          cloudEnabled && email ? undefined : entry.id,
-        );
-      }
-      await refresh();
     },
     [email, refresh, saveCategories, store],
   );

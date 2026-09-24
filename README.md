@@ -46,9 +46,9 @@ Kategori adalah milik pembaca, bukan aplikasi. Tombol **Kategori** membuka dialo
 
 Yang bisa diedit adalah **nama**-nya. **Tampilan** buku (motif, warna kain, foil, sampul) dipilih dari tujuh look yang sudah dirancang, karena tiap look adalah pasangan tetap antara palet dan gambar sampul di atlas halaman rak. Pembaca memilih look mana yang dipakai sebuah kategori; tidak membuat look baru.
 
-Entri menyimpan **id** kategori, bukan namanya. Jadi menamai ulang kategori tidak menyentuh satu entri pun — dan tidak ada entri yang bisa menunjuk label yang sudah tidak ada. Menghapus kategori yang masih dipakai akan menanyakan dulu: entri-entrinya dipindahkan ke kategori pertama, bukan dihapus.
+Entri menyimpan **id** kategori, bukan namanya. Jadi menamai ulang kategori tidak menyentuh satu entri pun — dan tidak ada entri yang bisa menunjuk label yang sudah tidak ada. Menghapus kategori yang masih dipakai akan menanyakan dulu, lalu **memindahkan** entri-entrinya ke kategori pertama, bukan menghapusnya. Pemindahan itu sungguhan menulis ulang entrinya: `findCategory` memang tetap akan *menampilkan* entri ber-id hilang di bawah kategori pertama, tapi id yang tersimpan tetap menunjuk kategori yang sudah tidak ada — jumlah catatan di dialog akan mengkredit kategori hantu, dan entri itu akan diam-diam kembali menempel kalau id-nya muncul lagi lewat impor.
 
-Kategori disimpan sekali per pembaca (localStorage `diary-book:categories`, atau satu baris `public.categories` di cloud) dan diselesaikan per id saat render. Ekspor JSON ikut membawa daftar kategori, jadi hasil impor mengembalikan nama yang dipakai entri — bukan hanya entrinya.
+Kategori disimpan sekali per pembaca (localStorage `diary-book:categories`, atau satu baris `public.categories` di cloud) dan diselesaikan per id saat render. Ekspor JSON ikut membawa daftar kategori, jadi hasil impor mengembalikan nama yang dipakai entri — bukan hanya entrinya. Selama pembaca belum mengubah satu pun nama atau tampilan, ekspor tetap berupa array polos seperti versi lama, supaya backup masih bisa dibaca build sebelumnya.
 
 ## Struktur
 

@@ -6,6 +6,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
   DEFAULT_CATEGORIES,
+  isShippedCategories,
   normalizeCategories,
   type Category,
   type DiaryEntry,
@@ -187,9 +188,16 @@ const supabaseStore: Store = {
       .select("list")
       .eq("user_id", userId)
       .maybeSingle();
-    // A missing row is the normal first-run state, not a failure: the shipped
-    // defaults are what a reader starts from.
-    if (error) return normalizeCategories(null);
+    /*
+     * A missing row is the normal first-run state, so it must not be an error —
+     * `maybeSingle` is what expresses that, and it is why this does not throw.
+     * But a *real* error has to be distinguishable from it, or a project whose
+     * `schema.sql` was never re-run would show the shipped seven, let the reader
+     * rename them, and only reveal the missing table on save. `PGRST116` is
+     * PostgREST's "no rows" for `single`; `maybeSingle` reports no rows as
+     * `data: null, error: null`, so any error here is a genuine failure.
+     */
+    if (error) throw new Error(error.message);
     return normalizeCategories(data?.list);
   },
   async saveCategories(categories) {
@@ -216,11 +224,17 @@ export const localOwner = LOCAL_OWNER;
  * Downloads every entry as a JSON file, the escape hatch for local storage.
  *
  * Categories are included so a backup restores the reader's own category names
- * and not just the entries that point at them. The file stays a plain array
- * when the list is the shipped default, so existing exports keep their shape.
+ * and not just the entries that point at them. A reader who has not renamed
+ * anything still gets the bare array older versions wrote, so the file stays
+ * importable by an older build — the previous importer rejected anything that
+ * was not an array, and a backup that only the newest build can read is not much
+ * of a backup. The moment a label or look differs from the shipped seven, the
+ * file becomes the `{version, categories, entries}` object, because those names
+ * have to travel with the entries that reference them.
  */
 export function exportEntries(entries: DiaryEntry[], categories?: Category[]): void {
-  const payload = categories ? { version: 2, categories, entries } : entries;
+  const carriesCategories = categories != null && !isShippedCategories(categories);
+  const payload = carriesCategories ? { version: 2, categories, entries } : entries;
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");

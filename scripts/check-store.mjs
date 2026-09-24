@@ -279,6 +279,134 @@ for (const [label, value] of UNUSABLE) {
   }
 }
 
+// ---------------------------------------------------------- export shape
+
+console.log("\nstore.ts — what an export carries\n");
+
+/*
+ * The export has to stay readable by the build that shipped before categories
+ * existed. That importer rejected anything that was not a bare array, so a
+ * reader who has not renamed anything must still get an array — otherwise their
+ * backup is readable only by the new build, which is not much of a backup. The
+ * moment a name or look differs from the shipped seven, the list has to travel
+ * with the entries, because those labels exist nowhere else.
+ *
+ * `exportEntries` builds a Blob and clicks an anchor, so the payload is captured
+ * by stubbing the two DOM calls it makes rather than by rendering.
+ */
+{
+  const captured = [];
+  const realBlob = globalThis.Blob;
+  globalThis.Blob = class extends realBlob {
+    constructor(parts, options) {
+      super(parts, options);
+      captured.push(parts.join(""));
+    }
+  };
+  globalThis.URL.createObjectURL = () => "blob:stub";
+  globalThis.URL.revokeObjectURL = () => {};
+  const realCreateElement = globalThis.document?.createElement;
+  globalThis.document = { createElement: () => ({ click() {}, set href(v) {}, set download(v) {} }) };
+
+  try {
+    lib.exportEntries([ENTRY], DEFAULT_CATEGORIES);
+    lib.exportEntries([ENTRY], CUSTOM);
+
+    const shipped = JSON.parse(captured[0]);
+    if (!Array.isArray(shipped)) {
+      fail(
+        "export with the shipped list",
+        `wrote ${typeof shipped} instead of a bare array — an older build could not import it`,
+      );
+    }
+
+    const custom = JSON.parse(captured[1]);
+    if (Array.isArray(custom) || custom?.categories?.length !== 2) {
+      fail("export with the reader's own names", `dropped them: ${captured[1].slice(0, 80)}`);
+    }
+    if (custom?.entries?.length !== 1) {
+      fail("export with the reader's own names", "did not carry the entries");
+    }
+
+    /*
+     * A rename is the case that matters: same length, same ids, different label.
+     * A length-only comparison would call this the shipped list and drop the
+     * name, and the backup would restore "Focus" where the reader wrote "Life".
+     */
+    const renamed = DEFAULT_CATEGORIES.map((c, i) => (i === 0 ? { ...c, label: "Life" } : c));
+    lib.exportEntries([ENTRY], renamed);
+    const renamedPayload = JSON.parse(captured[2]);
+    if (Array.isArray(renamedPayload) || renamedPayload?.categories?.[0]?.label !== "Life") {
+      fail("export after a rename", `dropped the reader's label: ${captured[2].slice(0, 80)}`);
+    }
+  } finally {
+    globalThis.Blob = realBlob;
+    if (realCreateElement) globalThis.document.createElement = realCreateElement;
+    else delete globalThis.document;
+  }
+}
+
+// ------------------------------------------------------ a partial import
+console.log("\nstore.ts — a partial import leaves what it wrote\n");
+
+/*
+ * The premise behind `App.importAll`'s `finally`: the store writes entry by
+ * entry, so a failure partway through leaves the earlier writes committed. The
+ * app's response to that — refreshing so the shelf shows what actually landed,
+ * rather than the pre-import list that invites a duplicating retry — is a hook
+ * inside a component and is verified by reading, not by this file. What is
+ * pinned here is the store behaviour that makes the refresh necessary, because
+ * if the store were ever made transactional this check would start failing and
+ * the reasoning in App.tsx would need revisiting.
+ */
+{
+  memory.clear();
+  const entries = ["a", "b", "c", "d"].map((suffix) => ({
+    ...ENTRY,
+    id: `partial-${suffix}`,
+    title: `Entry ${suffix}`,
+  }));
+
+  // A store whose fifth write fails, standing in for a quota or a dropped
+  // connection. Everything before that point is expected to be on disk.
+  let writes = 0;
+  const failing = {
+    ...localStore,
+    async save(draft, id) {
+      writes++;
+      if (writes > 2) throw new Error("simulated failure");
+      return localStore.save(draft, id);
+    },
+  };
+
+  let threw = false;
+  try {
+    for (const item of entries) {
+      await failing.save(
+        { date: item.date, title: item.title, subtitle: item.subtitle, body: item.body, mood: item.mood, tags: [] },
+        item.id,
+      );
+    }
+  } catch {
+    threw = true;
+  }
+  if (!threw) fail("a failing write", "did not throw");
+
+  const landed = await localStore.list();
+  if (landed.length !== 2) {
+    fail("a partial import", `left ${landed.length} entries, expected the 2 written before the failure`);
+  }
+  // The point of the refresh: what landed is readable through the same path the
+  // shelf uses, so the reader sees the real state rather than the old list.
+  const titles = landed.map((item) => item.title).sort();
+  if (titles.join(",") !== "Entry a,Entry b") {
+    fail("a partial import", `landed entries are ${JSON.stringify(titles)}`);
+  }
+
+  // Leave the store as this block found it; the sections below count entries.
+  for (const item of landed) await localStore.remove(item.id);
+}
+
 // ------------------------------------------------------------ the local store
 
 console.log("\nstore.ts — the local store holds up\n");

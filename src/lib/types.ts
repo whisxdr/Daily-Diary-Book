@@ -89,6 +89,27 @@ export function hasCategory(categories: Category[], id: string): boolean {
 }
 
 /**
+ * True when a list is exactly the shipped seven, labels and looks included.
+ *
+ * Used by the export to decide whether the reader's categories need to travel
+ * with the file. Comparing the whole list rather than just the count is what
+ * makes this honest: a reader who renamed "Focus" to "Life" has a list of the
+ * same length whose names exist nowhere else, and dropping them would produce a
+ * backup that restores the entries under the wrong labels.
+ */
+export function isShippedCategories(categories: Category[]): boolean {
+  return (
+    categories.length === DEFAULT_CATEGORIES.length &&
+    categories.every(
+      (category, index) =>
+        category.id === DEFAULT_CATEGORIES[index].id &&
+        category.label === DEFAULT_CATEGORIES[index].label &&
+        category.motifKey === DEFAULT_CATEGORIES[index].motifKey,
+    )
+  );
+}
+
+/**
  * Coerces stored or imported data into a usable category list.
  *
  * Categories are reader data, so they can arrive malformed: an older export, a

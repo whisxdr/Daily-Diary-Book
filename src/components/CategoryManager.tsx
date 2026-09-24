@@ -8,9 +8,13 @@
  * `label` and only ever *picks* a `motifKey` — and why the id is never shown
  * or rewritten, so renaming cannot orphan an entry.
  *
- * Deleting a category asks where its entries should go first. Without that
- * step the entries would survive but silently re-point at the first category,
- * which reads as data loss even though nothing was lost.
+ * Deleting a category that entries still name moves them, and the move is
+ * reported to `onSave` rather than left implicit. `findCategory` would keep
+ * *rendering* those entries under the first category either way, but the stored
+ * id would still name the deleted one: the counts beside each row would keep
+ * crediting a category that no longer exists, so the dialog would under-report
+ * on the next delete, and the entries would silently re-point if that id ever
+ * came back. Moving them makes the promise in the confirm dialog true.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MOTIF_KEYS, newCategoryId, type Category, type MotifKey } from "../lib/types";
@@ -19,7 +23,12 @@ type CategoryManagerProps = {
   categories: Category[];
   /** How many entries currently name each category id, for the delete prompt. */
   counts: Record<string, number>;
-  onSave: (categories: Category[]) => Promise<void>;
+  /**
+   * Persists the list. `remap` is present when categories were deleted that
+   * entries still named: those entries must be rewritten to `to`, or they stay
+   * pointed at an id that no longer resolves.
+   */
+  onSave: (categories: Category[], remap?: { from: string[]; to: string }) => Promise<void>;
   onClose: () => void;
 };
 
@@ -36,6 +45,13 @@ const LOOK_LABELS: Record<MotifKey, { name: string; blurb: string; swatch: strin
 
 export function CategoryManager({ categories, counts, onSave, onClose }: CategoryManagerProps) {
   const [draft, setDraft] = useState<Category[]>(() => categories.map((category) => ({ ...category })));
+  /*
+   * Ids deleted in this session that entries may still name. Kept as state
+   * rather than derived from the draft, because a deleted id is indistinguishable
+   * from one the reader simply never had — and rewriting entries for the latter
+   * would be wrong.
+   */
+  const [remapped, setRemapped] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -65,10 +81,11 @@ export function CategoryManager({ categories, counts, onSave, onClose }: Categor
 
   /*
    * Removing a category the reader still has entries in would leave those
-   * entries pointing at an id that no longer resolves. `findCategory` resolves
-   * that to the first category rather than failing, but doing it silently looks
-   * like the entries changed by themselves — so the reader is asked to pick a
-   * destination and the dialog reports what moved.
+   * entries storing an id that no longer resolves. `findCategory` would keep
+   * rendering them under the first category, so nothing would look broken — but
+   * the stored id would keep counting toward a category that is gone, and would
+   * silently re-attach if that id ever returned. The reader is told what will
+   * happen, and the ids are remembered here so `save` can rewrite the entries.
    */
   const remove = useCallback((category: Category) => {
     const used = counts[category.id] ?? 0;
@@ -78,21 +95,29 @@ export function CategoryManager({ categories, counts, onSave, onClose }: Categor
         `Catatan itu akan dipindahkan ke kategori pertama, bukan dihapus. Lanjutkan?`;
       if (!window.confirm(message)) return;
     }
-    setDraft((previous) => (previous.length <= 1 ? previous : previous.filter((item) => item.id !== category.id)));
-  }, [counts]);
+    // The guard first, then the state writes. Recording the move inside the
+    // `setDraft` updater would run it twice under StrictMode's double-invoke.
+    if (draft.length <= 1) return;
+    setDraft((previous) => previous.filter((item) => item.id !== category.id));
+    setRemapped((ids) => (ids.includes(category.id) ? ids : [...ids, category.id]));
+  }, [counts, draft.length]);
 
   const save = useCallback(async () => {
     const cleaned = draft.map((item) => ({ ...item, label: item.label.trim() || "Tanpa nama" }));
+    // Deleted ids that entries still name; the destination is the first category
+    // that survives, which is the one `findCategory` would have rendered them
+    // under anyway.
+    const stale = remapped.filter((id) => !cleaned.some((item) => item.id === id));
     setSaving(true);
     setError(null);
     try {
-      await onSave(cleaned);
+      await onSave(cleaned, stale.length && cleaned.length ? { from: stale, to: cleaned[0].id } : undefined);
       onClose();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Gagal menyimpan kategori");
       setSaving(false);
     }
-  }, [draft, onClose, onSave]);
+  }, [draft, onClose, onSave, remapped]);
 
   // Escape closes, and Tab stays inside the dialog — the same contract as the
   // entry editor.
@@ -118,10 +143,20 @@ export function CategoryManager({ categories, counts, onSave, onClose }: Categor
       if (!items.length) return;
       const first = items[0];
       const last = items[items.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
+      /*
+       * The check is "is focus inside the dialog", not "is focus on the first or
+       * last item". A browser blurs an element the moment it is disabled, so
+       * removing the second-to-last category leaves focus on `<body>` — which
+       * matches neither `first` nor `last`, and Tab would walk out of the modal
+       * into the page behind it. Treating any focus outside the dialog as an
+       * edge sends it back to the right end.
+       */
+      const active = document.activeElement;
+      const inside = active instanceof HTMLElement && dialog.contains(active);
+      if (event.shiftKey && (!inside || active === first)) {
         event.preventDefault();
         last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
+      } else if (!event.shiftKey && (!inside || active === last)) {
         event.preventDefault();
         first.focus();
       }
@@ -131,8 +166,20 @@ export function CategoryManager({ categories, counts, onSave, onClose }: Categor
     return () => dialog.removeEventListener("keydown", onKeyDown);
   }, [onClose]);
 
+  /*
+   * A click on the scrim closes, but not when there are unsaved edits: the cost
+   * here is the whole list, and the footer is already telling the reader those
+   * changes are pending. Closing on an accidental click would silently discard
+   * every rename in the dialog — the same class of loss the delete prompt exists
+   * to prevent. Escape still closes outright, because that is the deliberate key.
+   */
+  const closeFromScrim = useCallback(() => {
+    if (dirty) return;
+    onClose();
+  }, [dirty, onClose]);
+
   return (
-    <div className="editor-scrim" onPointerDown={(event) => event.target === event.currentTarget && onClose()}>
+    <div className="editor-scrim" onPointerDown={(event) => event.target === event.currentTarget && closeFromScrim()}>
       <div className="editor editor--categories" role="dialog" aria-modal="true" aria-labelledby="category-title" ref={dialogRef}>
         <header className="editor__head">
           <h2 className="editor__title" id="category-title">

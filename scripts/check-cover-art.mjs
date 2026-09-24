@@ -119,9 +119,15 @@ for (const [index, entry] of shelf.entries()) {
  * destructures to `undefined` and throws inside the page's own script, where
  * `initialize().catch()` silently swaps in the static catalog — the reader loses
  * the whole scene and nothing logs the reason.
+ *
+ * `Infinity` is the case that motivated the guard's final `|| 0`. It is truthy,
+ * so a guard written as `Number(x) || 0` passes it straight through, and
+ * `Infinity % 7` is `NaN` — which indexes to `undefined` and throws. JSON has no
+ * Infinity literal but `1e999` parses to it, so a hand-edited file can carry
+ * one, and it is the only input that defeats the inner coercion.
  */
 console.log("\nmalformed coverCrop:");
-for (const value of [undefined, null, NaN, -1, 99, "orbits", 3.7]) {
+for (const value of [undefined, null, NaN, -1, 99, "orbits", 3.7, Infinity, -Infinity]) {
   const book = lib.toShelfBook(shelf[0], 0, categories);
   book.coverCrop = value;
   let tile;

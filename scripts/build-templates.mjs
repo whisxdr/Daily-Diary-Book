@@ -166,6 +166,12 @@ function buildShelf() {
   const books = findArrayLiteral(source, "const BOOKS");
   const parsedBooks = parseLiteral(books.text, "BOOKS");
   if (!Array.isArray(parsedBooks) || parsedBooks.length === 0) throw new Error("BOOKS is not a non-empty array");
+  /*
+   * The keys the page's own rendering code reads. This validates the *packaged*
+   * catalog, which is why `coverCrop` is absent here: the page learns that field
+   * from the patch below, and it is asserted against our generated books in
+   * `check-derive.mjs` instead.
+   */
   const requiredKeys = [
     "id", "title", "roman", "discipline", "note", "deck", "binding", "format",
     "theme", "motif", "motifKey", "paletteLabel", "color", "foil", "palette",
@@ -178,10 +184,38 @@ function buildShelf() {
   record(edits, booksReplacement, books.text, "BOOKS");
   out = out.slice(0, books.start) + booksReplacement + out.slice(books.end);
 
-  // 2. The atlas holds seven artworks, selected by position. With more entries
-  //    than artworks the index runs off the end and drawImage throws, so wrap it.
+  // 2. Cover artwork is looked up by the volume's position on the shelf:
+  //
+  //      COVER_CROPS[BOOKS.indexOf(book)]
+  //
+  //    That is the category mismatch. Everything else about a volume's look —
+  //    cloth colour, foil, paper, wall, ink — is read off the book object, and
+  //    `derive.ts` sets those from the entry's category. The artwork alone came
+  //    from the slot, so a "Play" entry at slot 0 wore the ultramarine
+  //    "brackets" artwork over coral cloth. With one entry the two agreed by
+  //    coincidence (the default category is the first motif, and the only book
+  //    is at slot 0), which is why it only showed up from the second entry on.
+  //
+  //    The atlas is authored in motif order, so the crop that belongs to a
+  //    category is just that motif's index — which `derive.ts` now ships on the
+  //    book as `coverCrop`. Reading it from the book fixes the mismatch and
+  //    removes the position dependency entirely. The previous fix here wrapped
+  //    the index in `mod(...)` to stop it running off the end past seven
+  //    entries; that turned a crash into silent wrongness (entry 8 wore crop 0)
+  //    and is no longer needed, because the index no longer depends on how many
+  //    entries there are.
+  //
+  //    `Number`/`Math.trunc`/`?? 0` stay as guards rather than as the mechanism.
+  //    `derive.ts` already clamps to a valid crop, but this expression runs
+  //    inside the page's own script, where an index that is not a whole number —
+  //    `NaN` from a hand-edited payload, a string, a float — indexes to
+  //    `undefined`, and the destructuring on the left then throws. A throw there
+  //    costs the reader the entire scene: `initialize().catch()` swaps in the
+  //    static catalog and nothing logs why. Coercing first keeps a bad index to
+  //    one wrong cover instead of no shelf at all. `|| 0` catches only `NaN`,
+  //    because `0` is itself a valid crop.
   const cropUse = "COVER_CROPS[BOOKS.indexOf(book)]";
-  const cropFix = "COVER_CROPS[mod(BOOKS.indexOf(book), COVER_CROPS.length)]";
+  const cropFix = "COVER_CROPS[mod(Math.trunc(Number(book.coverCrop)) || 0, COVER_CROPS.length)]";
   const cropped = replaceOnce(out, cropUse, cropFix, "COVER_CROPS lookup");
   record(edits, cropFix, cropUse, "COVER_CROPS lookup");
   out = cropped.text;

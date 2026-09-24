@@ -46,3 +46,38 @@ drop policy if exists "entries are deletable by owner" on public.entries;
 create policy "entries are deletable by owner"
   on public.entries for delete
   using (auth.uid() = user_id);
+
+-- The reader's own category list: the labels they see and the look each one
+-- wears. One row per reader, because the list is small, always read whole, and
+-- always written whole.
+--
+-- Entries reference a category by its stable id in `entries.mood`, so renaming
+-- a category is a write to this row alone — no entry is touched, and no entry
+-- can be left pointing at a label that no longer exists. That is also why the
+-- list is jsonb rather than a table of rows: a rename must not have to rewrite
+-- every entry that names the category.
+create table if not exists public.categories (
+  user_id     uuid primary key default auth.uid() references auth.users (id) on delete cascade,
+  list        jsonb not null default '[]'::jsonb,
+  updated_at  timestamptz not null default now()
+);
+
+alter table public.categories enable row level security;
+
+drop policy if exists "categories are readable by owner" on public.categories;
+create policy "categories are readable by owner"
+  on public.categories for select
+  using (auth.uid() = user_id);
+
+drop policy if exists "categories are insertable by owner" on public.categories;
+create policy "categories are insertable by owner"
+  on public.categories for insert
+  with check (auth.uid() = user_id);
+
+-- One policy covers the upsert: the client writes the whole row, so update
+-- needs the same predicate as insert.
+drop policy if exists "categories are updatable by owner" on public.categories;
+create policy "categories are updatable by owner"
+  on public.categories for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);

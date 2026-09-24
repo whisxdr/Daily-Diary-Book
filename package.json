@@ -5,9 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run build:templates && npm run check:derive && tsc --noEmit && vite build",
+    "build": "npm run build:templates && npm run check:derive && npm run check:cover && npm run check:store && tsc --noEmit && vite build",
     "build:templates": "node scripts/build-templates.mjs",
     "check:derive": "node scripts/check-derive.mjs",
+    "check:cover": "node scripts/check-cover-art.mjs",
+    "check:store": "node scripts/check-store.mjs",
     "verify:threeui": "node scripts/verify-threeui.mjs",
     "preview": "vite preview"
   },

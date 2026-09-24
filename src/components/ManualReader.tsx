@@ -20,10 +20,11 @@ import {
   toManualCardCss,
   toManualCardMarkup,
 } from "../lib/derive";
-import type { DiaryEntry } from "../lib/types";
+import type { Category, DiaryEntry } from "../lib/types";
 
 type ManualReaderProps = {
   entries: DiaryEntry[];
+  categories: Category[];
   onClose: () => void;
 };
 
@@ -43,15 +44,17 @@ function heroWord(entry: DiaryEntry | undefined): string {
   return first.length <= 12 ? first : first.slice(0, 11);
 }
 
-export function ManualReader({ entries, onClose }: ManualReaderProps) {
+export function ManualReader({ entries, categories, onClose }: ManualReaderProps) {
   const recent = useMemo(() => entries.slice(0, CARD_COUNT), [entries]);
 
   const fill = useMemo(() => {
-    const cards = recent.map((entry, index) => toManualCardMarkup(entry, index, recent.length)).join("\n        ");
+    const cards = recent
+      .map((entry, index) => toManualCardMarkup(entry, index, recent.length, categories))
+      .join("\n        ");
 
     const books: Record<string, ReturnType<typeof toManualBook>> = {};
     for (const entry of recent) {
-      books[manualKey(entry)] = toManualBook(entry);
+      books[manualKey(entry)] = toManualBook(entry, categories);
     }
 
     return {
@@ -60,7 +63,7 @@ export function ManualReader({ entries, onClose }: ManualReaderProps) {
       __DIARY_MANUAL_BOOKS__: escapeScriptJson(books),
       __DIARY_HERO__: escapeHtml(heroWord(recent[0])),
     };
-  }, [recent]);
+  }, [categories, recent]);
 
   const { url, error } = usePageBlob(recent.length ? "/landing-pages/manual.template.html" : "", fill);
 

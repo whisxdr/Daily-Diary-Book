@@ -4,9 +4,16 @@
  * fully usable offline and without an account.
  */
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { DiaryEntry, DiaryDraft } from "./types";
+import {
+  DEFAULT_CATEGORIES,
+  normalizeCategories,
+  type Category,
+  type DiaryEntry,
+  type DiaryDraft,
+} from "./types";
 
 const STORAGE_KEY = "diary-book:entries";
+const CATEGORY_KEY = "diary-book:categories";
 const LOCAL_OWNER = "local";
 
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
@@ -22,6 +29,13 @@ export type Store = {
   list: () => Promise<DiaryEntry[]>;
   save: (draft: DiaryDraft, id?: string) => Promise<DiaryEntry>;
   remove: (id: string) => Promise<void>;
+  /**
+   * The reader's category list. Categories are per-reader configuration rather
+   * than per-entry data, so they are stored once and resolved by id at render
+   * time. Returns the shipped defaults when nothing has been saved.
+   */
+  listCategories: () => Promise<Category[]>;
+  saveCategories: (categories: Category[]) => Promise<void>;
 };
 
 function newId(): string {
@@ -63,6 +77,20 @@ const localStore: Store = {
   async remove(id) {
     const entries = await localStore.list();
     localStorage.setItem(STORAGE_KEY, JSON.stringify(entries.filter((entry) => entry.id !== id)));
+  },
+  async listCategories() {
+    const raw = localStorage.getItem(CATEGORY_KEY);
+    if (!raw) return normalizeCategories(null);
+    try {
+      return normalizeCategories(JSON.parse(raw));
+    } catch {
+      // A corrupt value must not take the shelf down with it; the shipped
+      // defaults are always a valid answer.
+      return normalizeCategories(null);
+    }
+  },
+  async saveCategories(categories) {
+    localStorage.setItem(CATEGORY_KEY, JSON.stringify(categories));
   },
 };
 
@@ -142,6 +170,39 @@ const supabaseStore: Store = {
     const { error } = await client.from("entries").delete().eq("id", id);
     if (error) throw new Error(error.message);
   },
+  /*
+   * Categories live in one row per reader, keyed by user_id, with the list held
+   * as jsonb. A row per category would need its own ordering column and its own
+   * policy set for no gain — the list is small, always read whole, and always
+   * written whole.
+   */
+  async listCategories() {
+    const client = supabase;
+    if (!client) return normalizeCategories(null);
+    const { data: userData } = await client.auth.getUser();
+    const userId = userData.user?.id;
+    if (!userId) return normalizeCategories(null);
+    const { data, error } = await client
+      .from("categories")
+      .select("list")
+      .eq("user_id", userId)
+      .maybeSingle();
+    // A missing row is the normal first-run state, not a failure: the shipped
+    // defaults are what a reader starts from.
+    if (error) return normalizeCategories(null);
+    return normalizeCategories(data?.list);
+  },
+  async saveCategories(categories) {
+    const client = supabase;
+    if (!client) throw new Error("Supabase is not configured");
+    const { data: userData } = await client.auth.getUser();
+    const userId = userData.user?.id;
+    if (!userId) throw new Error("Sign in to save categories to the cloud");
+    const { error } = await client
+      .from("categories")
+      .upsert({ user_id: userId, list: categories, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+    if (error) throw new Error(error.message);
+  },
 };
 
 /** Entries the reader can see right now: the cloud when signed in, else local. */
@@ -151,9 +212,16 @@ export function activeStore(signedIn: boolean): Store {
 
 export const localOwner = LOCAL_OWNER;
 
-/** Downloads every entry as a JSON file, the escape hatch for local storage. */
-export function exportEntries(entries: DiaryEntry[]): void {
-  const blob = new Blob([JSON.stringify(entries, null, 2)], { type: "application/json" });
+/**
+ * Downloads every entry as a JSON file, the escape hatch for local storage.
+ *
+ * Categories are included so a backup restores the reader's own category names
+ * and not just the entries that point at them. The file stays a plain array
+ * when the list is the shipped default, so existing exports keep their shape.
+ */
+export function exportEntries(entries: DiaryEntry[], categories?: Category[]): void {
+  const payload = categories ? { version: 2, categories, entries } : entries;
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
@@ -162,12 +230,41 @@ export function exportEntries(entries: DiaryEntry[]): void {
   URL.revokeObjectURL(url);
 }
 
-/** Reads a previously exported file. Throws when the file is not an export. */
-export async function importEntries(file: File): Promise<DiaryEntry[]> {
+export type ImportResult = {
+  entries: DiaryEntry[];
+  /** Present only when the file carried a category list. */
+  categories: Category[] | null;
+};
+
+/**
+ * Reads a previously exported file. Throws when the file is not an export.
+ *
+ * Accepts both shapes: the bare array older exports wrote, and the
+ * `{version, categories, entries}` object this version writes.
+ *
+ * `categories` is `null` unless the file carried a list that actually yields
+ * categories. That distinction matters because the caller *replaces* the
+ * reader's list with whatever comes back, and `normalizeCategories` answers with
+ * the shipped seven whenever it cannot make sense of its input. So a
+ * truthy-but-unusable field — `"nope"`, `{}`, `[]`, `[{nope: 1}]` — would read as
+ * a valid list of the defaults, and importing a slightly-corrupt file would
+ * silently reset the reader's category names and re-point every entry that used
+ * one. The test is therefore not "is it an array" but "did a list survive
+ * normalization": only then does the file have categories worth restoring.
+ */
+export async function importEntries(file: File): Promise<ImportResult> {
   const parsed = JSON.parse(await file.text());
-  if (!Array.isArray(parsed)) throw new Error("File does not contain an entry list");
-  return parsed.filter(
+  const list = Array.isArray(parsed) ? parsed : parsed?.entries;
+  if (!Array.isArray(list)) throw new Error("File does not contain an entry list");
+  const entries = list.filter(
     (entry): entry is DiaryEntry =>
       typeof entry?.id === "string" && typeof entry?.title === "string" && typeof entry?.body === "string",
   );
+  const rawCategories = Array.isArray(parsed) ? undefined : parsed?.categories;
+  const restored = Array.isArray(rawCategories) ? normalizeCategories(rawCategories) : null;
+  // `normalizeCategories` falls back to `DEFAULT_CATEGORIES` (the same array
+  // instance) when it cannot use its input, so identity is what distinguishes a
+  // real list from that fallback.
+  const categories = restored && restored !== DEFAULT_CATEGORIES ? restored : null;
+  return { entries, categories };
 }

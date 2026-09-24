@@ -7,7 +7,15 @@
  * copy all follow from that pairing. An entry does the same thing — mood picks
  * the motif and its palette, and everything else is derived from the entry.
  */
-import { MOODS, isMood, DEFAULT_MOOD, type DiaryEntry, type ManualBook, type Mood, type ShelfBook, type ShelfPalette } from "./types";
+import {
+  findCategory,
+  MOTIF_KEYS,
+  type Category,
+  type DiaryEntry,
+  type ManualBook,
+  type ShelfBook,
+  type ShelfPalette,
+} from "./types";
 
 /** Motif labels as the packaged catalog names them, keyed by motifKey. */
 const MOTIF_LABELS: Record<string, string> = {
@@ -19,6 +27,35 @@ const MOTIF_LABELS: Record<string, string> = {
   frames: "Folded frames",
   compass: "Drafting compass",
 };
+
+/**
+ * Which atlas crop belongs to each motif.
+ *
+ * The packaged page picks cover artwork by the volume's position on the shelf,
+ * and the embedded atlas happens to be authored in motif order — brackets,
+ * paths, caret, orbits, modules, frames, compass, left to right. That
+ * coincidence is what let the two drift apart: the palette has always followed
+ * the category while the artwork followed the slot, so from the second entry on
+ * a volume wore a cover belonging to a different category. Keying the crop on
+ * the motif makes the artwork follow the category too.
+ */
+const MOTIF_CROPS: Record<string, number> = Object.fromEntries(
+  MOTIF_KEYS.map((key, index) => [key, index]),
+);
+
+/** The atlas crop index for a motif, falling back to the first artwork. */
+export function coverCropFor(motifKey: string): number {
+  return MOTIF_CROPS[motifKey] ?? 0;
+}
+
+/**
+ * The cloth colour a look wears. Exposed so the list beside the shelf can show
+ * the same swatch the volume does — the colour is a redundant cue there, never
+ * the only one, because the category name is always written next to it.
+ */
+export function lookColor(motifKey: string): string {
+  return (PALETTES[motifKey] ?? PALETTES.brackets).color;
+}
 
 /**
  * One authored palette per motif, taken from the packaged catalog. Keeping the
@@ -115,13 +152,21 @@ function cosmeticJitter(seed: number, salt: number): number {
   return x - Math.floor(x);
 }
 
-function moodOf(entry: DiaryEntry): Mood {
-  return isMood(entry.mood) ? entry.mood : DEFAULT_MOOD;
+/**
+ * The category an entry belongs to, resolved against the reader's own list.
+ *
+ * `categories` is a parameter rather than a module constant because the reader
+ * can rename, add, and delete categories at runtime. It is also why a miss is
+ * tolerated instead of throwing: an entry may name a category that was deleted,
+ * or arrive by import from a device with a different list, and `findCategory`
+ * resolves those to the first category so every derivation below stays total.
+ */
+function categoryOf(entry: DiaryEntry, categories: Category[]): Category {
+  return findCategory(categories, entry.mood);
 }
 
-function motifKeyOf(entry: DiaryEntry): string {
-  const mood = MOODS.find((m) => m.value === moodOf(entry));
-  return mood?.motifKey ?? "brackets";
+function motifKeyOf(entry: DiaryEntry, categories: Category[]): string {
+  return categoryOf(entry, categories).motifKey;
 }
 
 /** First sentence, trimmed to a length that reads as a spine line. */
@@ -144,13 +189,20 @@ function formatDate(iso: string): string {
  *
  * `index` is the entry's position in the shelf and becomes its volume number,
  * so the roman numeral follows the reader's own chronology rather than the id.
+ * The volume's *look* comes from the entry's category, never from `index` —
+ * position is an ordinal, and the two must not be confused or a re-ordered
+ * shelf reshuffles every cover.
+ *
+ * `categories` is the reader's current list. It is required rather than
+ * defaulted so a caller cannot silently fall back to the shipped seven and
+ * render the wrong palette for an entry whose category the reader renamed.
  */
-export function toShelfBook(entry: DiaryEntry, index: number): ShelfBook {
-  const motifKey = motifKeyOf(entry);
+export function toShelfBook(entry: DiaryEntry, index: number, categories: Category[]): ShelfBook {
+  const category = categoryOf(entry, categories);
+  const motifKey = category.motifKey;
   const chosen = PALETTES[motifKey] ?? PALETTES.brackets;
   const seed = hashSeed(entry.id);
-  const mood = MOODS.find((m) => m.value === moodOf(entry));
-  const moodLabel = mood?.label ?? "Focus";
+  const moodLabel = category.label;
 
   // The page indexes chapters[0..2] unconditionally — on its spine, its plates,
   // and its page labels. A short array throws inside the scene's own script and
@@ -177,6 +229,9 @@ export function toShelfBook(entry: DiaryEntry, index: number): ShelfBook {
     color: chosen.color,
     foil: chosen.foil,
     palette: chosen.palette,
+    // The page draws the cover from its atlas by index; this is that index, and
+    // it comes from the category's motif rather than the shelf slot.
+    coverCrop: coverCropFor(motifKey),
     width: Number((WIDTH[0] + cosmeticJitter(seed, 1) * (WIDTH[1] - WIDTH[0])).toFixed(2)),
     height: Number((HEIGHT[0] + cosmeticJitter(seed, 2) * (HEIGHT[1] - HEIGHT[0])).toFixed(2)),
     depth: Number((DEPTH[0] + cosmeticJitter(seed, 3) * (DEPTH[1] - DEPTH[0])).toFixed(2)),
@@ -186,8 +241,8 @@ export function toShelfBook(entry: DiaryEntry, index: number): ShelfBook {
 }
 
 /** The `books` record the Field Manuals page reads when a card is opened. */
-export function toManualBook(entry: DiaryEntry): ManualBook {
-  const mood = MOODS.find((m) => m.value === moodOf(entry));
+export function toManualBook(entry: DiaryEntry, categories: Category[]): ManualBook {
+  const category = categoryOf(entry, categories);
   const paragraphs = entry.body
     .split(/\n{2,}/)
     .map((part) => part.replace(/\s+/g, " ").trim())
@@ -203,7 +258,7 @@ export function toManualBook(entry: DiaryEntry): ManualBook {
       title: (entry.tags ?? [])[index] ?? `Bagian ${index + 2}`,
       body: paragraph,
     })),
-    prompt: entry.subtitle || (mood?.label ?? ""),
+    prompt: entry.subtitle || category.label,
     review: formatDate(entry.date),
   };
 }
@@ -244,8 +299,8 @@ export function manualKey(entry: DiaryEntry): string {
  * the same pairing the shelf uses for that mood, which keeps the two pages
  * reading as one collection rather than a placeholder.
  */
-function coverArt(entry: DiaryEntry): string {
-  const motifKey = motifKeyOf(entry);
+function coverArt(entry: DiaryEntry, categories: Category[]): string {
+  const motifKey = motifKeyOf(entry, categories);
   const chosen = PALETTES[motifKey] ?? PALETTES.brackets;
   const seed = hashSeed(entry.id);
   const angle = Math.round(cosmeticJitter(seed, 7) * 360);
@@ -325,17 +380,22 @@ function motifSvg(motifKey: string, ink: string, fill: string): string {
  * volume. The packaged card also holds a `<video>` cover animation; an entry has
  * no such clip, and the authored sheet already treats it as optional.
  */
-export function toManualCardMarkup(entry: DiaryEntry, index: number, count: number): string {
-  const { id, style } = toManualCard(entry, index, count);
-  const motifKey = motifKeyOf(entry);
+export function toManualCardMarkup(
+  entry: DiaryEntry,
+  index: number,
+  count: number,
+  categories: Category[],
+): string {
+  const { id, style } = toManualCard(entry, index, count, categories);
+  const motifKey = motifKeyOf(entry, categories);
   const chosen = PALETTES[motifKey] ?? PALETTES.brackets;
   const title = escapeHtml(entry.title || "Tanpa judul");
   const tags = entry.tags ?? [];
-  const footer = tags.length ? tags.slice(0, 3).join(" · ") : (MOODS.find((m) => m.value === moodOf(entry))?.label ?? "");
+  const footer = tags.length ? tags.slice(0, 3).join(" · ") : categoryOf(entry, categories).label;
 
   return [
     `<button class="book-card" type="button" data-book="${escapeHtml(id)}" aria-label="Buka ${title}"`,
-    ` style="--cover-color: ${chosen.color}; --cover: ${coverArt(entry)}; --cover-ink: ${chosen.palette.ink}; ${style}">`,
+    ` style="--cover-color: ${chosen.color}; --cover: ${coverArt(entry, categories)}; --cover-ink: ${chosen.palette.ink}; ${style}">`,
     `<span class="book" aria-hidden="true">`,
     `<span class="book-shadow"></span>`,
     `<span class="book-back"></span>`,
@@ -357,8 +417,13 @@ export function toManualCardMarkup(entry: DiaryEntry, index: number, count: numb
 }
 
 /** Card geometry the showcase positions its three cards with. */
-export function toManualCard(entry: DiaryEntry, index: number, count: number): { id: string; style: string } {
-  const motifKey = motifKeyOf(entry);
+export function toManualCard(
+  entry: DiaryEntry,
+  index: number,
+  count: number,
+  categories: Category[],
+): { id: string; style: string } {
+  const motifKey = motifKeyOf(entry, categories);
   const chosen = PALETTES[motifKey] ?? PALETTES.brackets;
   const layout = cardLayout(count, index);
   return {
@@ -386,8 +451,8 @@ export function toManualCardCss(entries: DiaryEntry[]): string {
 }
 
 /** One fallback card: the markup a reader without WebGL sees. */
-export function toFallbackCard(entry: DiaryEntry, index: number): string {
-  const motifKey = motifKeyOf(entry);
+export function toFallbackCard(entry: DiaryEntry, index: number, categories: Category[]): string {
+  const motifKey = motifKeyOf(entry, categories);
   const chosen = PALETTES[motifKey] ?? PALETTES.brackets;
   const seed = hashSeed(entry.id);
   const height = Math.round(356 + cosmeticJitter(seed, 4) * 52);
@@ -398,8 +463,8 @@ export function toFallbackCard(entry: DiaryEntry, index: number): string {
   );
 }
 
-export function toFallbackGrid(entries: DiaryEntry[]): string {
-  const cards = entries.map(toFallbackCard).join("\n        ");
+export function toFallbackGrid(entries: DiaryEntry[], categories: Category[]): string {
+  const cards = entries.map((entry, index) => toFallbackCard(entry, index, categories)).join("\n        ");
   return `<div class="fallback__grid" aria-label="Rak catatan pribadi">\n        ${cards}\n      </div>`;
 }
 
@@ -422,4 +487,24 @@ export function escapeScriptJson(value: unknown): string {
 
 export function sortEntries(entries: DiaryEntry[]): DiaryEntry[] {
   return [...entries].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : a.createdAt < b.createdAt ? 1 : -1));
+}
+
+/**
+ * How many entries name each category, for the manager's delete prompt.
+ *
+ * A prototype-less object, because a category id is arbitrary reader data: an
+ * imported file may name one `constructor` or `__proto__`, and on an ordinary
+ * object those read back as inherited members — the count would render as
+ * `"function Object() { [native code] }1"`, or the assignment would vanish
+ * entirely (assigning to `__proto__` on a plain object does not create an own
+ * key). Neither is a crash, but the dialog would state a wrong number while
+ * asking the reader to confirm a delete of entries it had miscounted.
+ *
+ * Exported rather than kept inside the component so a check can call it: the
+ * failure is invisible until a reader with such an id opens that dialog.
+ */
+export function categoryCounts(entries: DiaryEntry[]): Record<string, number> {
+  const counts: Record<string, number> = Object.create(null);
+  for (const entry of entries) counts[entry.mood] = (counts[entry.mood] ?? 0) + 1;
+  return counts;
 }

@@ -256,6 +256,25 @@ textarea,
   letter-spacing: -0.02em;
 }
 
+.entry-list__head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.entry-list__categories {
+  padding: 0 14px;
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  color: var(--paper);
+  font-size: 13px;
+}
+
+.entry-list__categories:hover {
+  background: rgba(241, 234, 223, 0.08);
+}
+
 .entry-list__compose {
   padding: 0 16px;
   background: var(--accent);
@@ -354,8 +373,29 @@ textarea,
 }
 
 .entry-card__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   color: rgba(241, 234, 223, 0.6);
   font-size: 12px;
+}
+
+/*
+ * The category's cloth colour, beside its name rather than instead of it. The
+ * swatch is decorative (aria-hidden) and the label always carries the meaning,
+ * so the cue survives for a reader who cannot separate these hues.
+ *
+ * The border is what makes it legible, not the fill: three of the seven cloths
+ * (ultramarine, cobalt, icy cyan) sit within 2:1 of this dark sidebar and would
+ * otherwise read as a smudge. At 0.55 the ring holds >=5.3:1 against the card
+ * for every cloth, so the swatch is always a visible shape.
+ */
+.entry-card__swatch {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border: 1px solid rgba(241, 234, 223, 0.55);
+  border-radius: 2px;
 }
 
 .entry-card__subtitle {
@@ -526,6 +566,119 @@ textarea,
 .editor__delete:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* -------------------------------------------------------------- categories */
+
+/*
+ * The category dialog borrows the editor's shell — same scrim, head, and foot —
+ * because it is the same kind of interruption. Only the body differs: a list of
+ * rows instead of a form, so it gets one full-width column.
+ */
+.editor--categories {
+  width: min(880px, 100%);
+}
+
+.editor__body--categories {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+.category__intro {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.category__list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/*
+ * One row per category: cloth swatch, the reader's own name for it, the look it
+ * wears, how many entries use it, and the way to remove it. The columns are
+ * sized so the two inputs share the slack and the fixed parts stay put.
+ */
+.category__row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1.1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: rgba(43, 35, 28, 0.04);
+  border: 1px solid rgba(43, 35, 28, 0.13);
+  border-radius: 12px;
+}
+
+/* The manager sits on light paper, so its ring is ink rather than paper. Same
+   reasoning as `.entry-card__swatch`: at 0.55 the ring clears 3:1 against the
+   row for every cloth, including the pale citron and icy cyan. */
+.category__swatch {
+  width: 22px;
+  height: 22px;
+  border: 1px solid rgba(43, 35, 28, 0.55);
+  border-radius: 6px;
+}
+
+.category__field,
+.category__look {
+  display: flex;
+  min-width: 0;
+}
+
+.category__field input,
+.category__look select {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 13px;
+  background: #fff;
+  border: 1px solid rgba(43, 35, 28, 0.2);
+  border-radius: 10px;
+  color: var(--ink);
+}
+
+.category__count {
+  color: var(--ink-soft);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.category__remove {
+  padding: 0 14px;
+  background: transparent;
+  border: 1px solid rgba(156, 47, 28, 0.42);
+  border-radius: 999px;
+  color: #9c2f1c;
+  font-size: 13px;
+}
+
+.category__remove:hover:not(:disabled) {
+  background: rgba(156, 47, 28, 0.1);
+}
+
+.category__remove:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.category__add {
+  align-self: start;
+  padding: 0 18px;
+  background: transparent;
+  border: 1px dashed rgba(43, 35, 28, 0.32);
+  border-radius: 999px;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.category__add:hover {
+  background: rgba(43, 35, 28, 0.06);
 }
 
 /* ----------------------------------------------------------------- reader */
@@ -770,6 +923,21 @@ textarea,
 
   .editor__body {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Five columns of controls will not fit a phone; the row stacks instead, with
+     the swatch and the remove button sharing the top line. */
+  .category__row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .category__field,
+  .category__look {
+    grid-column: 1 / -1;
+  }
+
+  .category__count {
+    grid-column: 1 / 3;
   }
 
   .auth__field input {

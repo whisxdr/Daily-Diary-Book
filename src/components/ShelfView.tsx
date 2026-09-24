@@ -1,6 +1,6 @@
 /*
  * The shelf is the shelf. Every entry is one volume, and the volume's motif and
- * palette come from its mood, so the reader's own chronology renders as the
+ * palette come from its category, so the reader's own chronology renders as the
  * same designed object the packaged page ships with.
  *
  * The 3D scene lives in a sandboxed iframe, which means its canvas is not
@@ -12,26 +12,41 @@ import { useMemo, type ReactNode } from "react";
 import { DiaryShelfPage } from "../shaders/landing-pages/LandingPages";
 import { usePageBlob } from "../lib/usePageBlob";
 import { toFallbackGrid, toShelfBook, escapeScriptJson } from "../lib/derive";
-import type { DiaryEntry } from "../lib/types";
+import type { Category, DiaryEntry } from "../lib/types";
 import { EntryList } from "./EntryList";
 
 type ShelfViewProps = {
   entries: DiaryEntry[];
+  categories: Category[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   onCompose: () => void;
+  onManageCategories: () => void;
   /** Storage controls, rendered under the list so the header stays one line. */
   storage?: ReactNode;
 };
 
-export function ShelfView({ entries, selectedId, onSelect, onCompose, storage }: ShelfViewProps) {
+export function ShelfView({
+  entries,
+  categories,
+  selectedId,
+  onSelect,
+  onCompose,
+  onManageCategories,
+  storage,
+}: ShelfViewProps) {
+  /*
+   * `categories` is part of the fill's identity, not just its inputs: renaming a
+   * category or changing its look has to rebuild the document, or the shelf
+   * keeps rendering the palette it was first built with.
+   */
   const fill = useMemo(
     () => ({
-      __DIARY_BOOKS__: escapeScriptJson(entries.map(toShelfBook)),
-      __DIARY_FALLBACK__: toFallbackGrid(entries),
+      __DIARY_BOOKS__: escapeScriptJson(entries.map((entry, index) => toShelfBook(entry, index, categories))),
+      __DIARY_FALLBACK__: toFallbackGrid(entries, categories),
       __DIARY_FALLBACK_TITLE__: `${entries.length} volume${entries.length === 1 ? "" : "s"} of your own.`,
     }),
-    [entries],
+    [categories, entries],
   );
 
   /*
@@ -80,9 +95,11 @@ export function ShelfView({ entries, selectedId, onSelect, onCompose, storage }:
 
       <EntryList
         entries={entries}
+        categories={categories}
         selectedId={selectedId}
         onSelect={onSelect}
         onCompose={onCompose}
+        onManageCategories={onManageCategories}
         busy={loading && entries.length > 0}
         storage={storage}
       />

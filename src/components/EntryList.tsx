@@ -4,21 +4,19 @@
  * canvas cannot do either — it is one bitmap inside a sandboxed frame.
  */
 import { useMemo, useState, type ReactNode } from "react";
-import { MOODS, type DiaryEntry } from "../lib/types";
-import { toRoman } from "../lib/derive";
+import { findCategory, type Category, type DiaryEntry } from "../lib/types";
+import { lookColor, toRoman } from "../lib/derive";
 
 type EntryListProps = {
   entries: DiaryEntry[];
+  categories: Category[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   onCompose: () => void;
+  onManageCategories: () => void;
   busy?: boolean;
   storage?: ReactNode;
 };
-
-function moodLabel(mood: string): string {
-  return MOODS.find((item) => item.value === mood)?.label ?? "Focus";
-}
 
 function formatDate(iso: string): string {
   const date = new Date(`${iso}T00:00:00`);
@@ -26,7 +24,16 @@ function formatDate(iso: string): string {
   return date.toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
 }
 
-export function EntryList({ entries, selectedId, onSelect, onCompose, busy, storage }: EntryListProps) {
+export function EntryList({
+  entries,
+  categories,
+  selectedId,
+  onSelect,
+  onCompose,
+  onManageCategories,
+  busy,
+  storage,
+}: EntryListProps) {
   const [query, setQuery] = useState("");
 
   const filtered = useMemo(() => {
@@ -41,9 +48,14 @@ export function EntryList({ entries, selectedId, onSelect, onCompose, busy, stor
     <aside className="entry-list" aria-label="Daftar catatan">
       <div className="entry-list__head">
         <h2 className="entry-list__title">Catatan</h2>
-        <button type="button" className="entry-list__compose" onClick={onCompose}>
-          Tulis baru
-        </button>
+        <div className="entry-list__head-actions">
+          <button type="button" className="entry-list__categories" onClick={onManageCategories}>
+            Kategori
+          </button>
+          <button type="button" className="entry-list__compose" onClick={onCompose}>
+            Tulis baru
+          </button>
+        </div>
       </div>
 
       <label className="entry-list__search">
@@ -69,6 +81,7 @@ export function EntryList({ entries, selectedId, onSelect, onCompose, busy, stor
           {filtered.map((entry) => {
             const index = entries.indexOf(entry);
             const selected = entry.id === selectedId;
+            const category = findCategory(categories, entry.mood);
             return (
               <li key={entry.id}>
                 <button
@@ -80,7 +93,8 @@ export function EntryList({ entries, selectedId, onSelect, onCompose, busy, stor
                   <span className="entry-card__roman">Volume {toRoman(index + 1)}</span>
                   <strong className="entry-card__title">{entry.title || "Tanpa judul"}</strong>
                   <span className="entry-card__meta">
-                    {formatDate(entry.date)} · {moodLabel(entry.mood)}
+                    <span className="entry-card__swatch" style={{ background: lookColor(category.motifKey) }} aria-hidden="true" />
+                    {formatDate(entry.date)} · {category.label}
                   </span>
                   {entry.subtitle ? <span className="entry-card__subtitle">{entry.subtitle}</span> : null}
                 </button>

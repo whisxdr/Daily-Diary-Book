@@ -5,16 +5,17 @@
  * Magic link only: no password to store, and it works on the free tier.
  */
 import { useEffect, useState } from "react";
-import { cloudEnabled, exportEntries, importEntries, supabase } from "../lib/store";
-import type { DiaryEntry } from "../lib/types";
+import { cloudEnabled, exportEntries, importEntries, supabase, type ImportResult } from "../lib/store";
+import type { Category, DiaryEntry } from "../lib/types";
 
 type AuthGateProps = {
   entries: DiaryEntry[];
+  categories: Category[];
   email: string | null;
-  onEntriesImported: (entries: DiaryEntry[]) => void;
+  onEntriesImported: (result: ImportResult) => Promise<void>;
 };
 
-export function AuthGate({ entries, email, onEntriesImported }: AuthGateProps) {
+export function AuthGate({ entries, categories, email, onEntriesImported }: AuthGateProps) {
   const [address, setAddress] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -37,7 +38,7 @@ export function AuthGate({ entries, email, onEntriesImported }: AuthGateProps) {
           <code>VITE_SUPABASE_ANON_KEY</code> untuk menyimpan ke cloud.
         </p>
         <div className="auth__actions">
-          <button type="button" onClick={() => exportEntries(entries)} disabled={!entries.length}>
+          <button type="button" onClick={() => exportEntries(entries, categories)} disabled={!entries.length}>
             Ekspor JSON
           </button>
           <label className="auth__import">
@@ -51,8 +52,12 @@ export function AuthGate({ entries, email, onEntriesImported }: AuthGateProps) {
                 setError(null);
                 try {
                   const imported = await importEntries(file);
-                  onEntriesImported(imported);
-                  setStatus(`${imported.length} catatan diimpor`);
+                  await onEntriesImported(imported);
+                  setStatus(
+                    imported.categories
+                      ? `${imported.entries.length} catatan dan ${imported.categories.length} kategori diimpor`
+                      : `${imported.entries.length} catatan diimpor`,
+                  );
                 } catch (caught) {
                   setError(caught instanceof Error ? caught.message : "Gagal mengimpor");
                 }

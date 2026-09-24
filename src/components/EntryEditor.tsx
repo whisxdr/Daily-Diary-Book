@@ -6,10 +6,11 @@
  * a dirty draft, and the explicit save stays the primary action.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { MOODS, type DiaryDraft, type DiaryEntry } from "../lib/types";
+import { DEFAULT_CATEGORY_ID, findCategory, type Category, type DiaryDraft, type DiaryEntry } from "../lib/types";
 
 type EntryEditorProps = {
   entry: DiaryEntry | null;
+  categories: Category[];
   onSave: (draft: DiaryDraft, id?: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onClose: () => void;
@@ -21,7 +22,7 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function draftFrom(entry: DiaryEntry | null): DiaryDraft {
+function draftFrom(entry: DiaryEntry | null, categories: Category[]): DiaryDraft {
   if (entry) {
     return {
       date: entry.date,
@@ -32,11 +33,20 @@ function draftFrom(entry: DiaryEntry | null): DiaryDraft {
       tags: entry.tags,
     };
   }
-  return { date: today(), title: "", subtitle: "", body: "", mood: "focus", tags: [] };
+  // The first category is the one a new entry wears, so the default has to come
+  // from the reader's own list rather than a hard-coded id.
+  return {
+    date: today(),
+    title: "",
+    subtitle: "",
+    body: "",
+    mood: categories[0]?.id ?? DEFAULT_CATEGORY_ID,
+    tags: [],
+  };
 }
 
-export function EntryEditor({ entry, onSave, onDelete, onClose }: EntryEditorProps) {
-  const [draft, setDraft] = useState<DiaryDraft>(() => draftFrom(entry));
+export function EntryEditor({ entry, categories, onSave, onDelete, onClose }: EntryEditorProps) {
+  const [draft, setDraft] = useState<DiaryDraft>(() => draftFrom(entry, categories));
   const [tagText, setTagText] = useState(() => (entry?.tags ?? []).join(", "));
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -51,6 +61,18 @@ export function EntryEditor({ entry, onSave, onDelete, onClose }: EntryEditorPro
         .map((tag) => tag.trim())
         .filter(Boolean),
     [tagText],
+  );
+
+  /*
+   * A `<select>` whose value matches no `<option>` renders blank. An entry can
+   * name a category the reader has since deleted, so the shown value resolves
+   * through `findCategory` — the same fallback the shelf and the list use. That
+   * keeps the control honest: it shows the category the entry actually renders
+   * as, and picking any option writes that id back.
+   */
+  const selectedCategoryId = useMemo(
+    () => findCategory(categories, draft.mood).id,
+    [categories, draft.mood],
   );
 
   const update = useCallback(<K extends keyof DiaryDraft>(key: K, value: DiaryDraft[K]) => {
@@ -175,11 +197,11 @@ export function EntryEditor({ entry, onSave, onDelete, onClose }: EntryEditorPro
           </label>
 
           <label className="editor__field">
-            <span>Suasana</span>
-            <select value={draft.mood} onChange={(event) => update("mood", event.target.value)}>
-              {MOODS.map((mood) => (
-                <option key={mood.value} value={mood.value}>
-                  {mood.label}
+            <span>Kategori</span>
+            <select value={selectedCategoryId} onChange={(event) => update("mood", event.target.value)}>
+              {categories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.label}
                 </option>
               ))}
             </select>
